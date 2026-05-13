@@ -4,7 +4,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
 const distDir = resolve(process.cwd(), 'dist');
-const port = Number(process.env.PORT || 4174);
+const port = Number(process.env.PORT || 8080);
 const host = '0.0.0.0';
 
 const mimeTypes = {
