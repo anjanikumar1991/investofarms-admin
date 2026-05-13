@@ -6,9 +6,16 @@ interface AuthContextValue {
   user: AdminUser | null;
   token: string | null;
   loading: boolean;
-  sendOtp: (phone: string) => Promise<string>;
+  sendOtp: (phone: string) => Promise<SendOtpResponse>;
   verifyOtp: (phone: string, sessionId: string, otp: string) => Promise<void>;
+  sendEmailOtp: (email: string) => Promise<SendOtpResponse>;
+  verifyEmailOtp: (email: string, sessionId: string, otp: string) => Promise<void>;
   logout: () => void;
+}
+
+interface SendOtpResponse {
+  session_id: string;
+  otp?: string;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -46,34 +53,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendOtp = async (phone: string) => {
     const response = await api.post('/v1/auth/otp/send', { phone });
-    const data = unwrap<{ session_id: string }>(response);
-    return data.session_id;
+    return unwrap<SendOtpResponse>(response);
   };
 
   const verifyOtp = async (phone: string, sessionId: string, otp: string) => {
-    const response = await api.post('/v1/auth/otp/verify', {
-      phone,
-      session_id: sessionId,
-      otp,
-    });
+    const response = await api.post('/v1/auth/otp/verify', { phone, session_id: sessionId, otp });
     const data = unwrap<{ access_token: string }>(response);
     localStorage.setItem('admin_token', data.access_token);
-
     try {
       const meResponse = await api.get('/v1/auth/me');
       const currentUser = unwrap<AdminUser>(meResponse);
-
       if (!isAllowedAdminRole(currentUser.role)) {
         localStorage.removeItem('admin_token');
         throw new Error(`Access denied. This phone is registered as ${currentUser.role || 'unknown'}, not ADMIN/SUPERVISOR.`);
       }
-
       setUser(currentUser);
     } catch (error) {
       localStorage.removeItem('admin_token');
       throw error;
     }
+    setToken(data.access_token);
+  };
 
+  const sendEmailOtp = async (email: string): Promise<SendOtpResponse> => {
+    const response = await api.post('/v1/auth/email/otp/send', { email });
+    return unwrap<SendOtpResponse>(response);
+  };
+
+  const verifyEmailOtp = async (email: string, sessionId: string, otp: string) => {
+    const response = await api.post('/v1/auth/email/otp/verify', { email, session_id: sessionId, otp });
+    const data = unwrap<{ access_token: string }>(response);
+    localStorage.setItem('admin_token', data.access_token);
+    try {
+      const meResponse = await api.get('/v1/auth/me');
+      const currentUser = unwrap<AdminUser>(meResponse);
+      if (!isAllowedAdminRole(currentUser.role)) {
+        localStorage.removeItem('admin_token');
+        throw new Error(`Access denied. This email is registered as ${currentUser.role || 'unknown'}, not ADMIN/SUPERVISOR.`);
+      }
+      setUser(currentUser);
+    } catch (error) {
+      localStorage.removeItem('admin_token');
+      throw error;
+    }
     setToken(data.access_token);
   };
 
@@ -84,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const value = useMemo(
-    () => ({ user, token, loading, sendOtp, verifyOtp, logout }),
+    () => ({ user, token, loading, sendOtp, verifyOtp, sendEmailOtp, verifyEmailOtp, logout }),
     [user, token, loading],
   );
 
