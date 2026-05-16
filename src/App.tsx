@@ -10,6 +10,7 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { KYCApprovalPage } from './pages/KYCApprovalPage';
 import { LoginPage } from './pages/LoginPage';
 import { MasterDataPage } from './pages/MasterDataPage';
+import { ContentPage } from './pages/ContentPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import PaymentsPage from './pages/PaymentsPage';
 import { PayoutsPage } from './pages/PayoutsPage';
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="distribution-groups" element={<DistributionGroupsPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="content" element={<ContentPage />} />
       </Route>
     </Routes>
   );

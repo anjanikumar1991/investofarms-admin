@@ -1,7 +1,7 @@
 import {
   BarChart3, Bell, CalendarDays, ChevronRight, Database, FileCheck,
-  FileText, FolderKanban, HandCoins, IndianRupee, LogOut, Monitor,
-  Sprout, Users,
+  FileText, FolderKanban, HandCoins, IndianRupee, LayoutTemplate, LogOut,
+  Monitor, Sprout, Users,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -46,7 +46,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/distribution-groups', icon: <Users size={15} />,     label: 'Distribution' },
       { to: '/documents',           icon: <FileText size={15} />,   label: 'Documents' },
-      { to: '/notifications',       icon: <Bell size={15} />,       label: 'Notifications' },
+      { to: '/notifications',       icon: <Bell size={15} />,            label: 'Notifications' },
+      { to: '/content',             icon: <LayoutTemplate size={15} />, label: 'App Content' },
     ],
   },
   {
