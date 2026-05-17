@@ -43,6 +43,9 @@ export interface FarmProject {
   lease_fee_per_acre?: number;
   // Payout
   payout_tenure?: string;
+  // Visibility & sales gate
+  is_visible: boolean;
+  project_sales_start_date?: string;
 }
 
 export const PAYOUT_TENURES = ['Monthly', 'Quarterly', 'Half Yearly', 'Annually'];

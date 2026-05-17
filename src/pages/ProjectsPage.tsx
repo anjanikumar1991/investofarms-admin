@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Edit2, Plus, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Edit2, Eye, EyeOff, Plus, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { api, unwrap } from '../api/client';
 import { DataTable } from '../components/DataTable';
 import { FarmProject, PAYOUT_TENURES } from '../types';
@@ -23,10 +23,12 @@ const emptyProject = {
   status: 'open',
   project_start_date: '',
   project_end_date: '',
+  project_sales_start_date: '',
   documentation_fee_per_acre: '',
   farm_manage_fee_per_acre: '',
   lease_fee_per_acre: '',
   payout_tenure: '',
+  is_visible: true,
 };
 
 // ─── Shared label + input wrapper ───────────────────────────────────────────
@@ -66,16 +68,22 @@ function FormFields({ f, update }: { f: any; update: (k: string, v: string) => v
       {/* Timeline */}
       <div style={{ borderTop: '1px solid #e8e2d5', paddingTop: 12 }}>
         <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 700, color: '#75664b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Project Timeline</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
           <Field label="Project Start Date">
             <input type="date" value={f.project_start_date || ''} onChange={e => update('project_start_date', e.target.value)} />
           </Field>
           <Field label="Project End Date">
             <input type="date" value={f.project_end_date || ''} onChange={e => update('project_end_date', e.target.value)} />
           </Field>
+          <Field label="Sales Open Date">
+            <input type="date" value={f.project_sales_start_date || ''} onChange={e => update('project_sales_start_date', e.target.value)} />
+          </Field>
           <Field label="Harvest Date & Time">
             <input type="datetime-local" value={f.harvest_date || ''} onChange={e => update('harvest_date', e.target.value)} required />
           </Field>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12, color: '#75664b' }}>
+          <strong>Sales Open Date</strong>: project is visible to investors but investing is locked until this date. Leave blank to open immediately.
         </div>
       </div>
 
@@ -157,6 +165,21 @@ export function ProjectsPage() {
   // Delete confirm
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Visibility toggle
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const toggleVisibility = async (project: FarmProject) => {
+    setTogglingId(project.id);
+    try {
+      await api.patch(`/admin/farm-projects/${project.id}`, { is_visible: !project.is_visible });
+      await loadProjects();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to update visibility');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const loadProjects = async () => {
     const response = await api.get('/admin/farm-projects/');
     setProjects(unwrap<FarmProject[]>(response) || []);
@@ -182,6 +205,7 @@ export function ProjectsPage() {
     lease_fee_per_acre: f.lease_fee_per_acre !== '' ? Number(f.lease_fee_per_acre) : null,
     project_start_date: f.project_start_date || null,
     project_end_date: f.project_end_date || null,
+    project_sales_start_date: f.project_sales_start_date || null,
     payout_tenure: f.payout_tenure || null,
   });
 
@@ -207,6 +231,7 @@ export function ProjectsPage() {
       harvest_date: project.harvest_date ? project.harvest_date.substring(0, 16) : '',
       project_start_date: project.project_start_date || '',
       project_end_date: project.project_end_date || '',
+      project_sales_start_date: project.project_sales_start_date || '',
       documentation_fee_per_acre: project.documentation_fee_per_acre ?? '',
       farm_manage_fee_per_acre: project.farm_manage_fee_per_acre ?? '',
       lease_fee_per_acre: project.lease_fee_per_acre ?? '',
@@ -313,13 +338,35 @@ export function ProjectsPage() {
           rows={projects}
           getKey={project => project.id}
           columns={[
-            { header: 'Project', render: p => <strong>{p.project_name}</strong> },
+            { header: 'Project', render: p => (
+              <div>
+                <strong>{p.project_name}</strong>
+                {!p.is_visible && <span className="badge gold" style={{ marginLeft: 8, fontSize: 10 }}>Hidden</span>}
+              </div>
+            )},
             { header: 'Crop', render: p => p.crop_name },
-            { header: 'ROI', render: p => `${p.roi_percentage}%` },
             { header: 'Plots', render: p => `${p.available_plots}/${p.total_plots}` },
-            { header: 'Tenure', render: p => p.payout_tenure || '—' },
-            { header: 'Timeline', render: p => p.project_start_date ? `${p.project_start_date} → ${p.project_end_date || '?'}` : '—' },
             { header: 'Status', render: p => <span className={`badge ${p.status === 'open' ? 'green' : 'gray'}`}>{p.status}</span> },
+            { header: 'Sales Open', render: p => p.project_sales_start_date
+              ? <span style={{ fontSize: 12 }}>{new Date(p.project_sales_start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              : <span style={{ fontSize: 12, color: '#75664b' }}>Immediate</span>
+            },
+            { header: 'Visible', render: p => (
+              <button
+                onClick={() => toggleVisibility(p)}
+                disabled={togglingId === p.id}
+                title={p.is_visible ? 'Hide from investors' : 'Show to investors'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', fontSize: 12, fontWeight: 700, borderRadius: 10, border: 'none', cursor: 'pointer',
+                  background: p.is_visible ? '#e8f5e9' : '#ffeaea',
+                  color: p.is_visible ? '#174a2a' : '#9f1d1d',
+                  opacity: togglingId === p.id ? 0.5 : 1,
+                }}
+              >
+                {p.is_visible ? <><Eye size={13} /> Visible</> : <><EyeOff size={13} /> Hidden</>}
+              </button>
+            )},
             {
               header: 'Actions',
               render: p => (
