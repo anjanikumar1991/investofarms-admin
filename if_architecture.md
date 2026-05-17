@@ -1,7 +1,7 @@
 # InvestoFarms — Architecture Reference
 
 > One-stop reference for all three repos. Read this before touching any file to minimise context usage.
-> Last updated: 2026-05-13
+> Last updated: 2026-05-17
 
 ---
 
@@ -24,7 +24,7 @@
 | **Database** | Supabase (PostgreSQL) | `DATABASE_URL` set in Railway service variables |
 | **Email OTP** | Brevo HTTP API | `https://api.brevo.com/v3/smtp/email` (HTTPS, not SMTP) |
 | **SMS OTP** | InstaAlerts (Fonetool) | `https://japi.instaalerts.zone/httpapi/JsonReceiver` — **NOT YET CONFIGURED** |
-| **File storage** | MyTrueHost shared hosting | SFTP — future use |
+| **File storage** | Cloudflare R2 | Private bucket, presigned PUT URLs — `app/services/r2_storage.py` |
 | **Domain** | investofarms.com | Hosted on MyTrueHost / cPanel |
 
 ### Railway Environment Variables — `investofarms-api` service
@@ -40,6 +40,10 @@
 | `EXPOSE_OTP_IN_RESPONSE` | `False` (set `True` for dev testing) |
 | `SMS_SENDER_ID` | `INVFMS` |
 | `SMS_API_KEY` | **Not set yet** — SMS OTP falls back to console log |
+| `CF_ACCOUNT_ID` | Cloudflare account ID for R2 |
+| `CF_R2_ACCESS_KEY_ID` | R2 API access key |
+| `CF_R2_SECRET_ACCESS_KEY` | R2 API secret key |
+| `CF_R2_BUCKET_NAME` | R2 bucket name (private) |
 | `SMTP_HOST/USER/PASSWORD/PORT` | Set but unused — Brevo API takes priority |
 
 > ⚠️ Railway shared variables are NOT auto-inherited by services. Add vars directly to the service Variables tab.
@@ -55,8 +59,9 @@
 - No Alembic — migrations are hand-written scripts in `scripts/`
 - DB session: `app/db/session.py` — `DATABASE_URL` env var required (raises RuntimeError if missing)
 - JWT: `app/core/jwt.py` — `HS256`, expiry from `ACCESS_TOKEN_EXPIRE_MINUTES`
-- Email: `app/core/email_service.py` — uses **Brevo HTTP API** if `BREVO_API_KEY` set, falls back to SMTP
+- Email: `app/core/email_service.py` — uses **Brevo HTTP API** if `BREVO_API_KEY` set, falls back to SMTP. OTP email uses **HTML text logo** (not SVG — Gmail strips SVG); "investo" in `#28947F`, "fa₹ms." in `#EBB912`, stacked, Arial Black bold.
 - SMS: `app/core/sms.py` — InstaAlerts JSON API; prints OTP to console if `SMS_API_KEY` not set
+- File storage: `app/services/r2_storage.py` — Cloudflare R2 private bucket; `generate_presigned_put_url()` for upload, `generate_presigned_get_url()` for download. Admin doc upload uses backend-proxy flow (avoid browser CORS).
 
 ### Entry point
 `app/main.py` — registers all routers, adds CORS (`allow_origins=["*"]`), calls `init_db()` on startup.
@@ -162,6 +167,8 @@ status ("open"|"upcoming"|"closed"|"completed"),
 project_start_date, project_end_date,
 documentation_fee_per_acre, farm_manage_fee_per_acre, lease_fee_per_acre,
 payout_tenure ("Monthly"|"Quarterly"|"Half Yearly"|"Annually"),
+is_visible (bool, default true),           ← admin visibility toggle
+project_sales_start_date (date, nullable), ← "Sales open on [date]" banner in mobile
 created_at
 ```
 
@@ -281,9 +288,9 @@ Also set in `.env.local`.
 RootNavigator (Stack)
 ├── Auth → AuthNavigator (Stack)
 │   ├── OnboardingScreen
-│   ├── LoginScreen          ← phone/email toggle
+│   ├── LoginScreen          ← phone/email toggle; NO create account link (removed)
 │   ├── OtpVerifyScreen      ← mode: 'phone' | 'email'
-│   ├── RegisterScreen
+│   ├── RegisterScreen       ← exists but not linked from LoginScreen
 │   ├── ForgotPasswordScreen
 │   └── CompleteProfileScreen
 └── Main → DrawerNavigator
@@ -322,34 +329,41 @@ GOLD = #F5B800   CREAM = #FAF8F1
 
 ---
 
-## Current Status (as of 2026-05-13)
+## Current Status (as of 2026-05-17)
 
 ### ✅ Done
 - Full UI redesign — all screens (Dashboard, Portfolio, Projects, Profile, Monitor, etc.)
 - Backend migrated from SQLite to PostgreSQL (Supabase)
 - Backend deployed on Railway — live at `investofarms-api-production.up.railway.app`
 - Phone OTP auth — working end-to-end (SMS falls back to Railway logs; SMS_API_KEY not set)
-- Email OTP auth — backend + mobile + admin dashboard implemented
+- Email OTP auth — backend + mobile + admin dashboard implemented, tested working
 - Email delivery via Brevo HTTP API (bypasses SMTP port blocking on cloud hosts)
+- OTP email template — HTML text logo (SVG stripped by Gmail), branded colours (`#28947F` / `#EBB912`)
 - Mobile app API URL updated to Railway
 - Admin dashboard: phone/email toggle login implemented
 - `Investofarmers` system distribution group — all new users auto-added
-
-### 🔄 In Progress
-- Email OTP delivery — Brevo API code deployed, testing in progress
+- Cloudflare R2 file storage — private bucket, presigned URLs, backend-proxy upload for admin docs
+- `FarmProject` — `is_visible` + `project_sales_start_date` fields; admin toggle + mobile sales banner
+- Mobile logo (SVG in InvestoLoader): transparent background, fixed C-path crash, top wheat leaf visible
+- `HeaderTitle` — tapping brand logo navigates to HomeScreen from anywhere
+- `ProjectDetailsScreen` — floating `<` back button over hero image (top-left, semi-transparent circle)
+- `OnboardingScreen` — all slide buttons consistent `#174A2A`
+- `LoginScreen` — greeting "Welcome to InvestoFarms 🌾"; create account link removed
+- `OtpVerifyScreen` — privacy text: "Your contact information will not be shared with any third parties."
+- Android back button: `backBehavior="initialRoute"` on Tab.Navigator
+- Safe area / overflow fixes: Notifications, Profile, ProjectDetails headers
+- LegalDocumentsScreen created and wired to HomeScreen trust row
+- ProfileScreen redesigned — single scrollable page, collapsible sections
 
 ### ❌ Pending / Next Steps
 
-1. **Verify email OTP works** — test after latest Railway deployment with `BREVO_API_KEY`
-2. **Deploy admin dashboard to Railway** — set `VITE_API_BASE_URL` + build command `npm run build`, serve with static hosting or Railway
-3. **Configure SMS (InstaAlerts)** — add `SMS_API_KEY` to Railway service variables
-4. **Connect admin dashboard to Railway API** — update `VITE_API_BASE_URL` in Railway
-5. **KYC flow** — mobile KYC submission needs testing end-to-end
-6. **Live portfolio data** — `DashboardScreen` still uses mock data for stat tiles; wire to real API
-7. **Payment flow testing** — UPI reference submission + admin approve/reject end-to-end
-8. **File storage (MyTrueHost SFTP)** — document upload integration
-9. **Push notifications** — not started
-10. **Delete duplicate Railway service** — `investofarms_v02` service is unused, can be deleted
+1. **Deploy admin dashboard to Railway** — set `VITE_API_BASE_URL` + build command `npm run build`
+2. **Configure SMS (InstaAlerts)** — add `SMS_API_KEY` to Railway service variables
+3. **KYC flow** — mobile KYC submission needs testing end-to-end
+4. **Live portfolio data** — `DashboardScreen` stat tiles still use mock data; wire to real API
+5. **Payment flow testing** — UPI reference submission + admin approve/reject end-to-end
+6. **Push notifications** — not started
+7. **Delete duplicate Railway service** — `investofarms_v02` service is unused, can be deleted
 
 ---
 
