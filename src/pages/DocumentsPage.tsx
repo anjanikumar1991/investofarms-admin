@@ -87,6 +87,40 @@ export function DocumentsPage() {
     setSelectedFile(null);
   };
 
+  /** Step 1: get presigned PUT URL. Step 2: PUT file to R2. Returns file_key. */
+  const presignAndUpload = async (file: File): Promise<string> => {
+    const extension = file.name.split('.').pop() || 'bin';
+    const contentType = file.type || 'application/octet-stream';
+
+    const presignRes = await api.post('/v1/upload/presign', {
+      folder: 'documents',
+      content_type: contentType,
+      extension,
+    });
+    const { upload_url, file_key } = presignRes.data?.data ?? presignRes.data;
+
+    // PUT the file directly to R2 (presigned URL handles auth — no bearer token)
+    const putRes = await fetch(upload_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error(`R2 upload failed: ${putRes.status}`);
+
+    return file_key as string;
+  };
+
+  /** Fetch a short-lived signed GET URL from R2 and open it in a new tab. */
+  const handleOpenDocument = async (fileKey: string) => {
+    try {
+      const res = await api.get(`/v1/upload/signed-url?file_key=${encodeURIComponent(fileKey)}`);
+      const { signed_url } = res.data?.data ?? res.data;
+      window.open(signed_url, '_blank');
+    } catch {
+      alert('Could not generate download link. The file may have been deleted.');
+    }
+  };
+
   const handleUpload = async () => {
     if (!documentName.trim() || !documentType.trim() || !selectedFile) {
       alert('Please fill in document name, type and file');
@@ -100,13 +134,17 @@ export function DocumentsPage() {
 
     setUploading(true);
     try {
+      // Upload file to R2, get back the object key
+      const fileKey = await presignAndUpload(selectedFile);
+
+      // Register the document record in the backend
       const formData = new FormData();
       formData.append('document_name', documentName.trim());
       formData.append('document_type', documentType.trim());
       formData.append('document_badge', documentBadge);
       if (uploadGroupIds.length > 0) formData.append('distribution_group_ids', uploadGroupIds.join(','));
       if (expiryDate) formData.append('expiry_date', expiryDate);
-      formData.append('file', selectedFile);
+      formData.append('file_key', fileKey);
 
       await api.post('/v1/admin/documents/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -117,7 +155,7 @@ export function DocumentsPage() {
       setShowUploadModal(false);
       alert('Document uploaded as invisible. Click Post to make it visible.');
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Failed to upload document');
+      alert(err?.response?.data?.detail || err?.message || 'Failed to upload document');
     } finally {
       setUploading(false);
     }
@@ -142,13 +180,20 @@ export function DocumentsPage() {
 
     setUploading(true);
     try {
+      // If a replacement file was selected, upload it to R2 first
+      let newFileKey: string | null = null;
+      if (editFile) {
+        newFileKey = await presignAndUpload(editFile);
+      }
+
       const formData = new FormData();
       formData.append('document_name', documentName.trim());
       formData.append('document_type', documentType.trim());
       formData.append('document_badge', documentBadge);
       formData.append('distribution_group_ids', uploadGroupIds.join(','));
       formData.append('expiry_date', expiryDate);
-      if (editFile) formData.append('file', editFile);
+      if (newFileKey) formData.append('file_key', newFileKey);
+
       await api.patch(`/v1/admin/documents/${editingDocument.id}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -157,7 +202,7 @@ export function DocumentsPage() {
       resetUploadForm();
       setEditFile(null);
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Failed to update document');
+      alert(err?.response?.data?.detail || err?.message || 'Failed to update document');
     } finally {
       setUploading(false);
     }
@@ -260,7 +305,7 @@ export function DocumentsPage() {
                           {doc.is_visible ? <EyeOff size={14} /> : <Eye size={14} />}
                           {publishingId === doc.id ? '...' : doc.is_visible ? 'Hide' : 'Post'}
                         </button>
-                        <button onClick={() => window.open(doc.document_location, '_blank')} style={{ padding: '6px 10px', fontSize: 12, background: 'white', color: '#174a2a', border: '1px solid #e2d7c3' }}>
+                        <button onClick={() => handleOpenDocument(doc.document_location)} style={{ padding: '6px 10px', fontSize: 12, background: 'white', color: '#174a2a', border: '1px solid #e2d7c3' }}>
                           <Download size={14} /> File
                         </button>
                       </div>
