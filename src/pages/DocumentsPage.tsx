@@ -87,29 +87,6 @@ export function DocumentsPage() {
     setSelectedFile(null);
   };
 
-  /** Step 1: get presigned PUT URL. Step 2: PUT file to R2. Returns file_key. */
-  const presignAndUpload = async (file: File): Promise<string> => {
-    const extension = file.name.split('.').pop() || 'bin';
-    const contentType = file.type || 'application/octet-stream';
-
-    const presignRes = await api.post('/v1/upload/presign', {
-      folder: 'documents',
-      content_type: contentType,
-      extension,
-    });
-    const { upload_url, file_key } = presignRes.data?.data ?? presignRes.data;
-
-    // PUT the file directly to R2 (presigned URL handles auth — no bearer token)
-    const putRes = await fetch(upload_url, {
-      method: 'PUT',
-      headers: { 'Content-Type': contentType },
-      body: file,
-    });
-    if (!putRes.ok) throw new Error(`R2 upload failed: ${putRes.status}`);
-
-    return file_key as string;
-  };
-
   /** Fetch a short-lived signed GET URL from R2 and open it in a new tab. */
   const handleOpenDocument = async (fileKey: string) => {
     try {
@@ -134,17 +111,14 @@ export function DocumentsPage() {
 
     setUploading(true);
     try {
-      // Upload file to R2, get back the object key
-      const fileKey = await presignAndUpload(selectedFile);
-
-      // Register the document record in the backend
+      // Send file + metadata to backend — backend proxies upload to R2 (avoids CORS)
       const formData = new FormData();
       formData.append('document_name', documentName.trim());
       formData.append('document_type', documentType.trim());
       formData.append('document_badge', documentBadge);
       if (uploadGroupIds.length > 0) formData.append('distribution_group_ids', uploadGroupIds.join(','));
       if (expiryDate) formData.append('expiry_date', expiryDate);
-      formData.append('file_key', fileKey);
+      formData.append('file', selectedFile);
 
       await api.post('/v1/admin/documents/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -180,19 +154,13 @@ export function DocumentsPage() {
 
     setUploading(true);
     try {
-      // If a replacement file was selected, upload it to R2 first
-      let newFileKey: string | null = null;
-      if (editFile) {
-        newFileKey = await presignAndUpload(editFile);
-      }
-
       const formData = new FormData();
       formData.append('document_name', documentName.trim());
       formData.append('document_type', documentType.trim());
       formData.append('document_badge', documentBadge);
       formData.append('distribution_group_ids', uploadGroupIds.join(','));
       formData.append('expiry_date', expiryDate);
-      if (newFileKey) formData.append('file_key', newFileKey);
+      if (editFile) formData.append('file', editFile);
 
       await api.patch(`/v1/admin/documents/${editingDocument.id}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
