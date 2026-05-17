@@ -113,7 +113,7 @@ export function DistributionGroupsPage() {
     }
     setSaving(true);
     try {
-      await api.post('/v1/distribution-groups/', {
+      await api.post('/v1/distribution-groups', {
         name: newGroupName,
         description: newGroupDesc || null,
       });

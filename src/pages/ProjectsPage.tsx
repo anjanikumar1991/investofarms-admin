@@ -189,7 +189,7 @@ export function ProjectsPage() {
     event.preventDefault();
     setSaving(true);
     try {
-      await api.post('/admin/farm-projects/', toPayload(form));
+      await api.post('/admin/farm-projects', toPayload(form));
       setForm(emptyProject);
       setShowCreateForm(false);
       await loadProjects();

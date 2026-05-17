@@ -120,7 +120,7 @@ export function DocumentsPage() {
       if (expiryDate) formData.append('expiry_date', expiryDate);
       formData.append('file', selectedFile);
 
-      await api.post('/v1/admin/documents/', formData, {
+      await api.post('/v1/admin/documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
